@@ -1,5 +1,7 @@
 # Claude love Codex
 
+<img src="docs/images/banner.webp" alt="Two robots working together: the orchestrator hands a plan to the executor, which sends back a compact report" width="100%">
+
 [![tests](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml/badge.svg)](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml)
 
 Claude Code orchestrates. OpenAI Codex CLI executes. You write one task in plain

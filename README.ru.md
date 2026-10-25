@@ -1,5 +1,7 @@
 # Claude love Codex
 
+<img src="docs/images/banner.webp" alt="Два робота работают вместе: оркестратор передаёт план исполнителю, тот возвращает компактный отчёт" width="100%">
+
 [![tests](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml/badge.svg)](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml)
 
 Claude Code — оркестратор. OpenAI Codex CLI — исполнитель. Вы формулируете задачу
