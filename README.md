@@ -59,7 +59,7 @@ macOS and Linux; not verified there yet.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/claude-love-codex.git
+git clone https://github.com/fafnirov/claude-love-codex.git
 cd claude-love-codex
 bash install.sh
 ~/.claude/scripts/codex-task.sh doctor

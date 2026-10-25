@@ -46,7 +46,7 @@ JSON-отчёт примерно на 500 токенов. В замеренно�
 ## Установка
 
 ```bash
-git clone https://github.com/<вы>/claude-love-codex.git
+git clone https://github.com/fafnirov/claude-love-codex.git
 cd claude-love-codex
 bash install.sh
 ~/.claude/scripts/codex-task.sh doctor
