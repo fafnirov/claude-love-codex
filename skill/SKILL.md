@@ -33,7 +33,8 @@ making the change. Do not invent subtasks just to run things in parallel.
 ## Rules
 
 - Never run two executors on overlapping files without coordination.
-- Never let Codex call Claude Code back (the driver blocks it; keep it that way).
+- Never let Codex call Claude Code back. The driver refuses to start when
+  `CODEX_TASK_ACTIVE` is set, but that is a guard, not a sandbox.
 - Always pass `--test` for code changes: the quality gate rests on tests.
 - Stop after 3 attempts at the same task and diagnose instead of iterating.
 - Never return raw logs or whole files to the conversation; report the compact

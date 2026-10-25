@@ -5,7 +5,11 @@ set -u
 export PYTHONIOENCODING=utf-8
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-S="${CLC_SCRIPTS:-$(cd "$HERE/../scripts" && pwd)}"
+if [ -n "${CLC_SCRIPTS:-}" ]; then S="$CLC_SCRIPTS"
+elif [ -f "$HERE/../scripts/codex-task.sh" ]; then S="$(cd "$HERE/../scripts" && pwd)"
+elif [ -f "$HERE/../codex-task.sh" ]; then S="$(cd "$HERE/.." && pwd)"
+else echo "cannot locate the scripts directory; set CLC_SCRIPTS" >&2; exit 2; fi
+PY="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)"
 T="$S/codex-task.sh"
 BASEDIR="$(mktemp -d "${TMPDIR:-/tmp}/clc-life-XXXXXX")"
 export CODEX_TASKS_DIR="$BASEDIR/tasks"
@@ -16,8 +20,8 @@ ok()  { PASS=$((PASS+1)); echo "  PASS  $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL  $1 -- $2"; }
 check(){ if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$2], got [$3]"; fi; }
 contains(){ case "$3" in *"$2"*) ok "$1" ;; *) bad "$1" "no [$2] in: $(printf '%s' "$3" | head -c 200)" ;; esac; }
-status_of(){ python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('status'))" "$1" 2>/dev/null; }
-task_id_of(){ python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['task_id'])" "$1" 2>/dev/null; }
+status_of(){ "$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('status'))" "$1" 2>/dev/null; }
+task_id_of(){ "$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['task_id'])" "$1" 2>/dev/null; }
 
 mkrepo() {
   rm -rf "$1"; mkdir -p "$1"
@@ -89,7 +93,7 @@ check "worktree record pruned" "1" "$(git -C "$R" worktree list | wc -l)"
 echo
 echo "=== F. Corrupt report ==="
 mkrepo "$R"
-FAKE_ACTION=ok bash "$T" run --repo "$R" --slug broken --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$R" --slug broken --test "'$PY' test_calc.py" \
   "report to be corrupted" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 BR="$(task_id_of "$BASEDIR/out.json")"
 printf 'this is not json' > "$CODEX_TASKS_DIR/$BR/report.json"
@@ -104,13 +108,13 @@ echo
 echo "=== G. Log rotation ==="
 mkrepo "$R"
 for i in 1 2 3; do
-  FAKE_ACTION=ok bash "$T" run --repo "$R" --slug "rot$i" --test "python test_calc.py" \
+  FAKE_ACTION=ok bash "$T" run --repo "$R" --slug "rot$i" --test "'$PY' test_calc.py" \
     "rotation $i" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
   TID="$(task_id_of "$BASEDIR/out.json")"
   bash "$T" clean "$TID" >/dev/null 2>&1
   mkrepo "$R"
 done
-python - "$CODEX_TASKS_DIR" <<'PYX'
+"$PY" - "$CODEX_TASKS_DIR" <<'PYX'
 import os, pathlib, sys, time
 root = pathlib.Path(sys.argv[1])
 old = time.time() - 60 * 86400
@@ -122,7 +126,7 @@ for d in root.glob("2*"):
             pass
 PYX
 OUT="$(bash "$T" gc --days 30 --dry-run 2>&1)"
-DRYN="$(printf '%s' "$OUT" | python -c "import json,sys;print(len(json.load(sys.stdin)['removed']))")"
+DRYN="$(printf '%s' "$OUT" | "$PY" -c "import json,sys;print(len(json.load(sys.stdin)['removed']))")"
 [ "$DRYN" -gt 0 ] && ok "gc dry run found $DRYN stale tasks" || bad "gc dry-run" "nothing found"
 BEFORE_N="$(ls -1d "$CODEX_TASKS_DIR"/2* 2>/dev/null | wc -l)"
 [ "$BEFORE_N" -gt 0 ] && ok "dry run deleted nothing" || bad "gc dry-run" "directories disappeared"

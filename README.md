@@ -50,7 +50,8 @@ on the Codex side and ~0.5k in Claude's context.
 - [Claude Code](https://docs.anthropic.com/claude-code)
 - [OpenAI Codex CLI](https://developers.openai.com/codex/cli/), signed in
   (`codex login`)
-- git, Python 3, bash
+- git, Python 3 (`python3` or `python`), bash and GNU `timeout`
+  (coreutils; on macOS: `brew install coreutils`)
 
 Verified on Windows 11 + Git Bash with `codex-cli 0.163.0-alpha`. Should work on
 macOS and Linux; not verified there yet.

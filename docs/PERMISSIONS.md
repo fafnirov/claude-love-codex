@@ -13,13 +13,16 @@ or removes a worktree asks every time.
 
 Never add a blanket `Bash(*)`.
 
+`codex-run.sh` is deliberately **not** on the allow list. It is the low-level
+wrapper: `--write --dir <any path>` writes outside the task worktree and skips
+every gate in `codex-task.sh`. Allow it only if you understand that trade-off.
+
 Add this to the `permissions` object in `~/.claude/settings.json`:
 
 ```json
 {
   "permissions": {
     "allow": [
-      "Bash(~/.claude/scripts/codex-run.sh:*)",
       "Bash(~/.claude/scripts/codex-task.sh run:*)",
       "Bash(~/.claude/scripts/codex-task.sh list:*)",
       "Bash(~/.claude/scripts/codex-task.sh show:*)",

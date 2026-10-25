@@ -138,12 +138,26 @@ def detect_risks(changed, diff):
 
 
 def check_scope(changed, scope):
-    """Does the diff stay inside the task boundaries (glob patterns)."""
+    """Does the diff stay inside the task boundaries (glob patterns)?
+
+    A bare name matches that exact path only: "calc.py" must not accept
+    "calc.py.bak". Directory prefixes need an explicit "dir/" or a glob.
+    """
     if not scope:
         return True, []
     import fnmatch
-    outside = [f for f in changed
-               if not any(fnmatch.fnmatch(f, g) or f.startswith(g.rstrip("*")) for g in scope)]
+
+    def allowed(f):
+        for g in scope:
+            if fnmatch.fnmatch(f, g):
+                return True
+            if g.endswith("/") and f.startswith(g):
+                return True
+            if g.endswith("/*") and f.startswith(g[:-1]):
+                return True
+        return False
+
+    outside = [f for f in changed if not allowed(f)]
     return (not outside), outside
 
 

@@ -48,7 +48,7 @@ fi
 echo
 echo "Next steps"
 echo "  1. Check the environment:   $SCRIPTS_DIR/codex-task.sh doctor"
-echo "  2. Run the self-check:      bash $SCRIPTS_DIR/tests/run-tests.sh"
+echo "  2. Run the self-check:      CLC_SCRIPTS=$SCRIPTS_DIR bash $SCRIPTS_DIR/tests/run-tests.sh"
 echo "  3. Add permissions to $CLAUDE_DIR/settings.json — see docs/PERMISSIONS.md."
 echo "     The installer does not touch settings.json on purpose."
 echo

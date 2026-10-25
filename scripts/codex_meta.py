@@ -44,10 +44,23 @@ def save(p, data):
 def guard_paths(repo, scripts):
     home = pathlib.Path.home()
     codex_home = pathlib.Path(os.environ.get("CODEX_HOME") or (home / ".codex"))
+    # in a linked worktree .git is a file, so ask git for the common dir
+    git_config = pathlib.Path(repo) / ".git" / "config"
+    try:
+        import subprocess
+        common = subprocess.run(["git", "-C", str(repo), "rev-parse", "--git-common-dir"],
+                                capture_output=True, text=True, timeout=10).stdout.strip()
+        if common:
+            cp = pathlib.Path(common)
+            if not cp.is_absolute():
+                cp = pathlib.Path(repo) / cp
+            git_config = cp / "config"
+    except Exception:
+        pass
     paths = [codex_home / "AGENTS.md",
              home / ".claude/settings.json",
              home / ".claude/CLAUDE.md",
-             pathlib.Path(repo) / ".git/config"]
+             git_config]
     if scripts:
         s = pathlib.Path(scripts)
         paths += [s / "codex-task.sh", s / "codex-run.sh", s / "codex_report.py",
@@ -329,12 +342,14 @@ def main():
                 if not dry:
                     shutil.rmtree(d, ignore_errors=True)
 
-        total_mb = sum(size_of(d) for d in task_dirs()) / 1048576
+        done = {r["task"] for r in removed}
+        total_mb = sum(size_of(d) for d in task_dirs() if d.name not in done) / 1048576
         while total_mb > max_mb:
-            cand = [d for d in task_dirs() if not protect(d)]
+            cand = [d for d in task_dirs() if not protect(d) and d.name not in done]
             if not cand:
                 break
             d = cand[0]
+            done.add(d.name)
             sz = size_of(d)
             removed.append({"task": d.name, "mb": round(sz / 1048576, 2),
                             "reason": "size limit"})

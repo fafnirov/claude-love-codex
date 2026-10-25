@@ -27,8 +27,10 @@ A worktree isolates the **repository**, not the filesystem.
 - **Repository changes.** Every task works on its own branch in its own worktree.
 - **The checked-out branch.** When `--into` names another branch, only that ref
   moves; HEAD, the index and the working files are untouched.
-- **Recursion.** A delegated task cannot start another one, and cannot call
-  Claude Code back.
+- **Recursion (partly).** The driver refuses to start when `CODEX_TASK_ACTIVE`
+  is set, and the executor rules forbid calling Claude Code back. This is a
+  guard, not a sandbox: a process that unsets the variable can bypass it, and
+  nothing stops a `claude` binary from being executed.
 
 ## Not protected
 
@@ -37,6 +39,10 @@ A worktree isolates the **repository**, not the filesystem.
 - **Writing outside the worktree** into directories the user can write to.
 - **Network access** by the executor.
 - **File contents reaching the model** as part of a request.
+- **Concurrent bookkeeping.** Duplicate detection, attempt counters and the time
+  budget are plain files without locking. Two processes starting at the very same
+  moment can both pass a check or lose an update. The slot locks (`mkdir`) are
+  atomic; these counters are not.
 
 ## Residual risk
 

@@ -10,9 +10,9 @@ deterministic.
 
 | Suite | Checks | Result |
 |---|---|---|
-| `tests/run-tests.sh` | risk detector on real git diffs, scope, test states, CLI modes, limits, parallelism, merge gates, audit | 90 / 90 |
+| `tests/run-tests.sh` | risk detector on real git diffs, scope, executor self-commits, test states, CLI modes, limits, parallelism, merge gates, audit | 96 / 96 |
 | `tests/run-lifecycle.sh` | SIGINT, timeout, orphaned lock, orphaned worktree, corrupt report, restart, log rotation, stats | 25 / 25 |
-| `tests/run-merge-atomic.sh` | failing post-merge tests, ref targeting, compare-and-swap, control cases | 39 / 39 |
+| `tests/run-merge-atomic.sh` | failing post-merge tests, ref targeting, compare-and-swap, branch moved past the gate, HEAD switched mid-check, control cases | 47 / 47 |
 
 Run them with the environment the user has, not a special one:
 
@@ -53,9 +53,34 @@ Input totals include cached tokens. Cost is deliberately not computed: there is
 no reliable pricing data in the tooling, and an invented number would be worse
 than none.
 
+## Pre-publication review
+
+Before the first release the repository was reviewed by Codex itself, reading the
+actual sources. It found fifteen issues; the substantive ones were fixed and
+covered by new tests:
+
+- `changed_files` missed work the executor had committed on its own, which could
+  hide a change from the scope check and report `no_changes`;
+- `merge` merged the branch tip instead of the commit that passed the gate, so a
+  commit added after the report could slip in unverified;
+- the checked-out branch was read before the tests but used after them, so a
+  branch switch during the check could land the merge on the wrong branch;
+- scope matching accepted `calc.py.bak` for the pattern `calc.py`;
+- the documentation described the recursion guard as a hard guarantee;
+- `docs/PERMISSIONS.md` suggested allowing `codex-run.sh`, which bypasses the
+  driver's gates entirely;
+- `clean` reported success even when git refused to remove the worktree;
+- the tamper fingerprint missed `.git/config` in a linked worktree;
+- `python` and the installed test layout were not portable.
+
+Known and documented rather than fixed: attempt counters, the time budget and
+duplicate detection are not atomic under exactly simultaneous starts.
+
 ## Not verified
 
-- macOS and Linux (developed and verified on Windows 11 + Git Bash).
+- macOS and Linux beyond CI: the suites run in GitHub Actions on ubuntu,
+  macos and windows, but the live Codex path was exercised only on
+  Windows 11 + Git Bash.
 - Parallel execution with more than two live executors.
 - The `model_unavailable` status (implemented from the observed error text, not
   reproduced on purpose).

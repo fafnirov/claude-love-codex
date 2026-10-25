@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Test double for the Codex binary: exercises the whole delegation pipeline
 # without calling a model. Injected through CODEX_BIN. Controlled by env:
-#   FAKE_ACTION  ok | nochange | env | secret | sql | rmrf | symlink | binary |
-#                rename | hidden | deltest | outside | breaktest | breakmain
+#   FAKE_ACTION  ok | nochange | selfcommit | prefix | env | secret | sql | rmrf |
+#                symlink | binary | rename | hidden | deltest | outside |
+#                breaktest | breakmain
 #   FAKE_EXIT    exit code (default 0)
 #   FAKE_SLEEP   delay in seconds (for timeout tests)
 #   FAKE_JSON    good | corrupt | empty
@@ -38,6 +39,15 @@ case "$ACTION" in
     printf 'from calc import add, mul\n\nassert add(2, 3) == 5\nassert mul(3, 4) == 12\nprint("ok")\n' > test_calc.py
     ;;
   nochange) : ;;
+  selfcommit)
+    # the executor commits on its own: changed files must still be detected
+    printf '\ndef mul(a, b):\n    return a * b\n' >> calc.py
+    git -c user.name=exec -c user.email=exec@local commit -qam "executor commit" 2>/dev/null
+    ;;
+  prefix)
+    # a file whose name merely starts with an allowed name
+    printf 'backup\n' > calc.py.bak
+    ;;
   env)
     printf 'DB_PASSWORD=supersecret123\n' > .env
     ;;

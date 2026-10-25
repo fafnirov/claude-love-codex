@@ -37,7 +37,8 @@ JSON-отчёт примерно на 500 токенов. В замеренно�
 - [Claude Code](https://docs.anthropic.com/claude-code)
 - [OpenAI Codex CLI](https://developers.openai.com/codex/cli/) с авторизацией
   (`codex login`)
-- git, Python 3, bash
+- git, Python 3 (`python3` или `python`), bash и GNU `timeout`
+  (coreutils; на macOS: `brew install coreutils`)
 
 Проверено на Windows 11 + Git Bash с `codex-cli 0.163.0-alpha`. На macOS и Linux
 должно работать, но там не проверялось.

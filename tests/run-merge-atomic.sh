@@ -5,7 +5,11 @@ set -u
 export PYTHONIOENCODING=utf-8
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-S="${CLC_SCRIPTS:-$(cd "$HERE/../scripts" && pwd)}"
+if [ -n "${CLC_SCRIPTS:-}" ]; then S="$CLC_SCRIPTS"
+elif [ -f "$HERE/../scripts/codex-task.sh" ]; then S="$(cd "$HERE/../scripts" && pwd)"
+elif [ -f "$HERE/../codex-task.sh" ]; then S="$(cd "$HERE/.." && pwd)"
+else echo "cannot locate the scripts directory; set CLC_SCRIPTS" >&2; exit 2; fi
+PY="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)"
 T="$S/codex-task.sh"
 BASEDIR="$(mktemp -d "${TMPDIR:-/tmp}/clc-atomic-XXXXXX")"
 export CODEX_TASKS_DIR="$BASEDIR/tasks"
@@ -16,7 +20,7 @@ ok()  { PASS=$((PASS+1)); echo "  PASS  $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL  $1 -- $2"; }
 check(){ if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "expected [$2], got [$3]"; fi; }
 contains(){ case "$3" in *"$2"*) ok "$1" ;; *) bad "$1" "no [$2] in: $(printf '%s' "$3" | head -c 200)" ;; esac; }
-task_id_of(){ python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['task_id'])" "$1" 2>/dev/null; }
+task_id_of(){ "$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['task_id'])" "$1" 2>/dev/null; }
 
 mkrepo() {
   rm -rf "$1"; mkdir -p "$1"
@@ -45,7 +49,7 @@ BEFORE_CALC="$(cat "$R/calc.py")"
 BEFORE_WT="$(git -C "$R" worktree list | wc -l)"
 
 set +e
-OUT="$(bash "$T" merge "$ID" --into main --test "python test_calc.py" 2>&1)"
+OUT="$(bash "$T" merge "$ID" --into main --test "'$PY' test_calc.py" 2>&1)"
 RC=$?
 set -e
 
@@ -66,12 +70,12 @@ contains "audit records the refusal" "rejected_tests_failed" "$(tail -3 "$CODEX_
 echo
 echo "=== Control: a correct task merges and moves the branch ==="
 mkrepo "$R"
-FAKE_ACTION=ok bash "$T" run --repo "$R" --slug atomic-ok --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$R" --slug atomic-ok --test "'$PY' test_calc.py" \
   "correct change" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 ID2="$(task_id_of "$BASEDIR/out.json")"
 BEFORE2="$(git -C "$R" rev-parse main)"
 set +e
-OUT="$(bash "$T" merge "$ID2" --into main --test "python test_calc.py" 2>&1)"
+OUT="$(bash "$T" merge "$ID2" --into main --test "'$PY' test_calc.py" 2>&1)"
 RC2=$?
 set -e
 check "merge succeeded" "0" "$RC2"
@@ -93,11 +97,11 @@ printf 'DEV\n' > "$R/dev_marker.txt"
 git -C "$R" add -A; git -C "$R" commit -qm "work on dev"
 DEV_BEFORE="$(git -C "$R" rev-parse dev)"
 DEV_FILES="$(git -C "$R" ls-files | tr '\n' ' ')"
-FAKE_ACTION=ok bash "$T" run --repo "$R" --base main --slug into-ref --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$R" --base main --slug into-ref --test "'$PY' test_calc.py" \
   "change for main" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 ID3="$(task_id_of "$BASEDIR/out.json")"
 set +e
-OUT="$(bash "$T" merge "$ID3" --into main --test "python test_calc.py" 2>&1)"
+OUT="$(bash "$T" merge "$ID3" --into main --test "'$PY' test_calc.py" 2>&1)"
 RC3=$?
 set -e
 check "merge into a non-checked-out branch succeeded" "0" "$RC3"
@@ -121,7 +125,7 @@ contains "audit names the target branch" "\"into\": \"main\"" "$LAST"
 echo
 echo "=== CAS: --into moves during the check ==="
 mkrepo "$R"
-FAKE_ACTION=ok bash "$T" run --repo "$R" --base main --slug cas-test --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$R" --base main --slug cas-test --test "'$PY' test_calc.py" \
   "change under CAS" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 ID4="$(task_id_of "$BASEDIR/out.json")"
 # The verification command runs on the candidate result; here it also advances
@@ -142,6 +146,41 @@ git -C "$R" rev-parse --verify "codex/cas-test-$ID4" >/dev/null 2>&1 \
   || bad "CAS" "worktree removed"
 contains "audit records the target-moved refusal" "rejected_target_moved" "$(tail -2 "$CODEX_TASKS_DIR/index.jsonl")"
 check "temporary check worktree removed" "2" "$(git -C "$R" worktree list | wc -l)"
+
+echo
+echo "=== The task branch moved past the verified commit ==="
+mkrepo "$R"
+FAKE_ACTION=ok bash "$T" run --repo "$R" --slug moved-branch --test "'$PY' test_calc.py"   "change to be amended later" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
+ID5="$(task_id_of "$BASEDIR/out.json")"
+WT5="$CODEX_TASKS_DIR/$ID5/wt"
+printf 'sneaky
+' > "$WT5/sneaky.txt"
+git -C "$WT5" add -A
+git -C "$WT5" -c user.name=x -c user.email=x@l commit -qm "commit added after the report"
+MAIN5="$(git -C "$R" rev-parse main)"
+set +e
+OUT="$(bash "$T" merge "$ID5" --into main --test "'$PY' test_calc.py" 2>&1)"
+RC5=$?
+set -e
+[ "$RC5" -ne 0 ] && ok "merge refuses a branch that moved past the gate ($RC5)"   || bad "post-gate commit" "merge accepted unverified work"
+contains "refusal names the moved branch" "moved past the verified commit" "$OUT"
+check "target branch untouched" "$MAIN5" "$(git -C "$R" rev-parse main)"
+
+echo
+echo "=== The checked-out branch changes during the check ==="
+mkrepo "$R"
+FAKE_ACTION=ok bash "$T" run --repo "$R" --base main --slug head-switch --test "'$PY' test_calc.py"   "change while HEAD moves" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
+ID6="$(task_id_of "$BASEDIR/out.json")"
+MAIN6="$(git -C "$R" rev-parse main)"
+set +e
+OUT="$(bash "$T" merge "$ID6" --into main   --test "git -C '$R' checkout -q -b side && '$PY' test_calc.py" 2>&1)"
+RC6=$?
+set -e
+[ "$RC6" -ne 0 ] && ok "merge refuses when HEAD switched mid-check ($RC6)"   || bad "HEAD switch" "merge proceeded"
+contains "refusal names the branch switch" "checked-out branch changed" "$OUT"
+check "main untouched after the HEAD switch" "$MAIN6" "$(git -C "$R" rev-parse main)"
+check "side branch untouched" "$MAIN6" "$(git -C "$R" rev-parse side)"
+contains "audit records the HEAD refusal" "rejected_head_moved" "$(tail -2 "$CODEX_TASKS_DIR/index.jsonl")"
 
 echo
 echo "=== RESULT: PASS=$PASS FAIL=$FAIL ==="

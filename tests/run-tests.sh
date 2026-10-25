@@ -6,7 +6,11 @@ set -u
 export PYTHONIOENCODING=utf-8
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-S="${CLC_SCRIPTS:-$(cd "$HERE/../scripts" && pwd)}"
+if [ -n "${CLC_SCRIPTS:-}" ]; then S="$CLC_SCRIPTS"
+elif [ -f "$HERE/../scripts/codex-task.sh" ]; then S="$(cd "$HERE/../scripts" && pwd)"
+elif [ -f "$HERE/../codex-task.sh" ]; then S="$(cd "$HERE/.." && pwd)"
+else echo "cannot locate the scripts directory; set CLC_SCRIPTS" >&2; exit 2; fi
+PY="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)"
 T="$S/codex-task.sh"
 BASEDIR="$(mktemp -d "${TMPDIR:-/tmp}/clc-core-XXXXXX")"
 export CODEX_TASKS_DIR="$BASEDIR/tasks"
@@ -33,9 +37,9 @@ mkrepo() {
   git -C "$1" commit -qm init
 }
 
-status_of() { python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('status'))" "$1"; }
-field_of()  { python -c "import json,sys;v=json.load(open(sys.argv[1],encoding='utf-8')).get(sys.argv[2]);print(v if not isinstance(v,list) else '; '.join(map(str,v)))" "$1" "$2"; }
-task_id_of(){ python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['task_id'])" "$1" 2>/dev/null; }
+status_of() { "$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8')).get('status'))" "$1"; }
+field_of()  { "$PY" -c "import json,sys;v=json.load(open(sys.argv[1],encoding='utf-8')).get(sys.argv[2]);print(v if not isinstance(v,list) else '; '.join(map(str,v)))" "$1" "$2"; }
+task_id_of(){ "$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['task_id'])" "$1" 2>/dev/null; }
 last_task() {
   local id
   id="$(task_id_of "$BASEDIR/out.json")"
@@ -84,6 +88,20 @@ check "diff outside scope -> needs_review" "needs_review" "$(status_of "$D/repor
 check "scope_ok=False" "False" "$(field_of "$D/report.json" scope_ok)"
 contains "boundary warning" "leaves the task boundaries" "$(field_of "$D/report.json" warnings)"
 
+mkrepo "$R"
+FAKE_ACTION=selfcommit bash "$T" run --repo "$R" --slug selfcommit --no-require-tests   "executor commits by itself" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
+D="$(last_task)"
+check "executor self-commit: status success" "success" "$(status_of "$D/report.json")"
+contains "executor self-commit: file listed" "calc.py" "$(field_of "$D/report.json" changed_files)"
+[ "$(field_of "$D/report.json" commit)" != "None" ] && ok "executor self-commit: commit recorded"   || bad "self-commit" "no commit in the report"
+[ -s "$D/diff.patch" ] && ok "executor self-commit: diff captured" || bad "self-commit" "empty diff"
+
+mkrepo "$R"
+FAKE_ACTION=prefix bash "$T" run --repo "$R" --slug prefix-scope --scope "calc.py"   --no-require-tests "write a lookalike file" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
+D="$(last_task)"
+check "scope: calc.py.bak is outside scope calc.py" "needs_review" "$(status_of "$D/report.json")"
+check "scope: scope_ok=False for the lookalike" "False" "$(field_of "$D/report.json" scope_ok)"
+
 echo
 echo "=== C. Tests: not_run, failed, passed ==="
 mkrepo "$R"
@@ -95,14 +113,14 @@ check "tests_not_run=True" "True" "$(field_of "$D/report.json" tests_not_run)"
 check "auto-merge refused" "False" "$(field_of "$D/report.json" auto_merge_allowed)"
 
 mkrepo "$R"
-FAKE_ACTION=breaktest bash "$T" run --repo "$R" --slug tests-fail --test "python test_calc.py" \
+FAKE_ACTION=breaktest bash "$T" run --repo "$R" --slug tests-fail --test "'$PY' test_calc.py" \
   "break the test" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 D="$(last_task)"
 check "failing tests -> tests_failed" "tests_failed" "$(status_of "$D/report.json")"
 check "tests_failed=True" "True" "$(field_of "$D/report.json" tests_failed)"
 
 mkrepo "$R"
-FAKE_ACTION=ok bash "$T" run --repo "$R" --slug tests-pass --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$R" --slug tests-pass --test "'$PY' test_calc.py" \
   "correct change" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 D="$(last_task)"
 check "success -> success" "success" "$(status_of "$D/report.json")"
@@ -124,7 +142,7 @@ printf 'extra\n' > "$R/extra.txt"; git -C "$R" add -A; git -C "$R" commit -qm "s
 FAKE_ACTION=ok bash "$T" run --repo "$R" --slug basetest --base base-point --no-require-tests \
   "branch from the tag" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 D="$(last_task)"
-BASE_IN_META="$(python -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['base'])" "$D/meta.json")"
+BASE_IN_META="$("$PY" -c "import json,sys;print(json.load(open(sys.argv[1],encoding='utf-8'))['base'])" "$D/meta.json")"
 check "--base: branched from the given point" "$(git -C "$R" rev-parse base-point)" "$BASE_IN_META"
 if [ -f "$D/wt/extra.txt" ]; then bad "--base" "worktree contains a newer commit"; else ok "--base: worktree has no newer commits"; fi
 
@@ -137,7 +155,7 @@ check "--timeout: codex_exit=124" "124" "$(field_of "$D/report.json" codex_exit)
 
 SR="$BASEDIR/repo with spaces"
 mkrepo "$SR"
-FAKE_ACTION=ok bash "$T" run --repo "$SR" --slug spaces --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$SR" --slug spaces --test "'$PY' test_calc.py" \
   "path with spaces" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 D="$(last_task)"
 check "path with spaces: success" "success" "$(status_of "$D/report.json")"
@@ -195,17 +213,17 @@ contains "budget exhausted -> budget_exhausted" "budget_exhausted" "$OUT"
 
 # Attempt counters only grow after failures, so two identical failing attempts.
 mkrepo "$R"
-FAKE_ACTION=breaktest bash "$T" run --repo "$R" --slug progress --test "python test_calc.py" \
+FAKE_ACTION=breaktest bash "$T" run --repo "$R" --slug progress --test "'$PY' test_calc.py" \
   "first attempt" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 mkrepo "$R"
-FAKE_ACTION=breaktest bash "$T" run --repo "$R" --slug progress --test "python test_calc.py" \
+FAKE_ACTION=breaktest bash "$T" run --repo "$R" --slug progress --test "'$PY' test_calc.py" \
   "second attempt" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 D="$(last_task)"
 check "second failing attempt counted" "2" "$(field_of "$D/report.json" attempt)"
 contains "no progress -> warning" "no progress" "$(field_of "$D/report.json" warnings)"
 
 mkrepo "$R"
-DUPH="$(printf '%s|%s' "$R" "duplicate" | python "$S/codex_meta.py" sha1)"
+DUPH="$(printf '%s|%s' "$R" "duplicate" | "$PY" "$S/codex_meta.py" sha1)"
 mkdir -p "$CODEX_TASKS_DIR/active"; echo "fake-task $$" > "$CODEX_TASKS_DIR/active/$DUPH"
 OUT="$(FAKE_ACTION=ok bash "$T" run --repo "$R" --slug duptest --no-require-tests "duplicate" 2>&1)"
 contains "duplicate task refused" "duplicate" "$OUT"
@@ -247,7 +265,7 @@ check "locks released" "0" "$(ls -1d "$CODEX_TASKS_DIR"/locks/slot-* 2>/dev/null
 echo
 echo "=== G. Safe merge ==="
 mkrepo "$R"
-FAKE_ACTION=ok bash "$T" run --repo "$R" --slug merge-ok --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$R" --slug merge-ok --test "'$PY' test_calc.py" \
   "change to merge" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 D="$(last_task)"; MID="$(basename "$D")"
 printf 'def add(a, b):\n    return a + b  # main branch\n' > "$R/calc.py"
@@ -260,7 +278,7 @@ BEFORE="$(git -C "$R" rev-parse HEAD)"
 check "main preserved" "$BEFORE" "$(git -C "$R" rev-parse HEAD)"
 
 mkrepo "$R"
-FAKE_ACTION=ok bash "$T" run --repo "$R" --slug merge-dirty --test "python test_calc.py" \
+FAKE_ACTION=ok bash "$T" run --repo "$R" --slug merge-dirty --test "'$PY' test_calc.py" \
   "change 2" >"$BASEDIR/out.json" 2>"$BASEDIR/err.txt"
 D="$(last_task)"; MID="$(basename "$D")"
 printf 'user edit\n' >> "$R/README.md"

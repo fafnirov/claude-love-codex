@@ -39,13 +39,19 @@ DEFAULT_MODEL="${CODEX_DEFAULT_MODEL:-gpt-5.1-codex}"
 
 SLOT=""
 ACTIVE_FILE=""
+CHILD_PID=""
+# python3 on most systems, python on Windows/Git Bash
+PY="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo python)"
 
 die() { echo "codex-task: $*" >&2; exit 2; }
 
 release_resources() {
+  [ -n "$CHILD_PID" ] && kill -TERM "$CHILD_PID" 2>/dev/null || true
   [ -n "$SLOT" ] && rm -rf "$SLOT" 2>/dev/null || true
   [ -n "$ACTIVE_FILE" ] && rm -f "$ACTIVE_FILE" 2>/dev/null || true
 }
+
+on_signal() { release_resources; exit 130; }
 
 # Recursion guard: Codex must not start another delegated task.
 if [ -n "${CODEX_TASK_ACTIVE:-}" ]; then
@@ -64,14 +70,14 @@ check_flags() {
   done
 }
 
-jget() { python "$HELPER" get "$1" "$2"; }
+jget() { "$PY" "$HELPER" get "$1" "$2"; }
 
 # model: --model > CODEX_MODEL > Codex config > built-in default
 resolve_model() {
   local want="${1:-}"
   [ -z "$want" ] && want="${CODEX_MODEL:-}"
   if [ -z "$want" ] && [ -f "$CODEX_CONFIG" ]; then
-    want="$(python "$HELPER" config-model "$CODEX_CONFIG")"
+    want="$("$PY" "$HELPER" config-model "$CODEX_CONFIG")"
   fi
   [ -n "$want" ] || want="$DEFAULT_MODEL"
   echo "$want"
@@ -80,7 +86,7 @@ resolve_model() {
 # Availability per the Codex model cache; the cache can be stale, so this is a
 # warning only.
 model_known() {
-  python "$HELPER" model-known "${CODEX_HOME:-$HOME/.codex}/models_cache.json" "$1"
+  "$PY" "$HELPER" model-known "${CODEX_HOME:-$HOME/.codex}/models_cache.json" "$1"
 }
 
 acquire_slot() {
@@ -119,7 +125,7 @@ cmd_doctor() {
     echo "binary:   NOT FOUND (set CODEX_BIN)"
   fi
   if [ -f "${CODEX_HOME:-$HOME/.codex}/auth.json" ]; then
-    echo "auth:     present ($(python "$HELPER" auth-mode "${CODEX_HOME:-$HOME/.codex}/auth.json"))"
+    echo "auth:     present ($("$PY" "$HELPER" auth-mode "${CODEX_HOME:-$HOME/.codex}/auth.json"))"
   else
     echo "auth:     MISSING (run: codex login)"
   fi
@@ -162,16 +168,16 @@ cmd_run() {
   if [ -n "$task_file" ]; then
     [ -f "$task_file" ] || die "task file not found: $task_file"
     local c_goal c_scope c_tests c_timeout c_attempts c_slug c_repo c_forbidden c_accept c_deps
-    c_goal=$(python "$HELPER" contract-get "$task_file" goal)
-    c_scope=$(python "$HELPER" contract-get "$task_file" allowed_files)
-    c_tests=$(python "$HELPER" contract-get "$task_file" test_command)
-    c_timeout=$(python "$HELPER" contract-get "$task_file" timeout)
-    c_attempts=$(python "$HELPER" contract-get "$task_file" max_attempts)
-    c_slug=$(python "$HELPER" contract-get "$task_file" task_id)
-    c_repo=$(python "$HELPER" contract-get "$task_file" repo)
-    c_forbidden=$(python "$HELPER" contract-get "$task_file" forbidden)
-    c_accept=$(python "$HELPER" contract-get "$task_file" acceptance)
-    c_deps=$(python "$HELPER" contract-get "$task_file" depends_on)
+    c_goal=$("$PY" "$HELPER" contract-get "$task_file" goal)
+    c_scope=$("$PY" "$HELPER" contract-get "$task_file" allowed_files)
+    c_tests=$("$PY" "$HELPER" contract-get "$task_file" test_command)
+    c_timeout=$("$PY" "$HELPER" contract-get "$task_file" timeout)
+    c_attempts=$("$PY" "$HELPER" contract-get "$task_file" max_attempts)
+    c_slug=$("$PY" "$HELPER" contract-get "$task_file" task_id)
+    c_repo=$("$PY" "$HELPER" contract-get "$task_file" repo)
+    c_forbidden=$("$PY" "$HELPER" contract-get "$task_file" forbidden)
+    c_accept=$("$PY" "$HELPER" contract-get "$task_file" acceptance)
+    c_deps=$("$PY" "$HELPER" contract-get "$task_file" depends_on)
     [ -n "$c_goal" ] || die "the contract has no goal field"
     [ -n "$c_scope" ] && scope="$c_scope"
     [ -n "$c_tests" ] && test_cmd="$c_tests"
@@ -219,12 +225,12 @@ This task depends on: $c_deps (treat them as already done)"
 
   # Refuse an identical task that is already running.
   local dup_hash
-  dup_hash="$(printf '%s|%s' "$repo" "$prompt" | python "$HELPER" sha1)"
+  dup_hash="$(printf '%s|%s' "$repo" "$prompt" | "$PY" "$HELPER" sha1)"
   if [ "$allow_dup" -ne 1 ] && [ -f "$ROOT/active/$dup_hash" ]; then
     local other
     other="$(cat "$ROOT/active/$dup_hash")"
     if kill -0 "$(cut -d' ' -f2 <<<"$other")" 2>/dev/null; then
-      python "$HELPER" refuse duplicate "$slug" "an identical task is already running: $other"
+      "$PY" "$HELPER" refuse duplicate "$slug" "an identical task is already running: $other"
       return 4
     fi
     rm -f "$ROOT/active/$dup_hash"
@@ -234,7 +240,7 @@ This task depends on: $c_deps (treat them as already done)"
   local spent=0
   [ -f "$ROOT/budget/$slug" ] && spent="$(cat "$ROOT/budget/$slug")"
   if [ "$spent" -ge "$budget" ]; then
-    python "$HELPER" refuse budget_exhausted "$slug" \
+    "$PY" "$HELPER" refuse budget_exhausted "$slug" \
       "time budget exhausted: ${spent}s of ${budget}s"
     return 5
   fi
@@ -244,15 +250,16 @@ This task depends on: $c_deps (treat them as already done)"
   local attempt=1
   [ -f "$acount_file" ] && attempt=$(( $(cat "$acount_file") + 1 ))
   if [ "$attempt" -gt "$max_attempts" ]; then
-    python "$HELPER" blocked "$slug" "$attempt" "$max_attempts"
+    "$PY" "$HELPER" blocked "$slug" "$attempt" "$max_attempts"
     return 3
   fi
   echo "$attempt" > "$acount_file"
 
   # Concurrency limit.
-  trap release_resources EXIT INT TERM
+  trap release_resources EXIT
+  trap on_signal INT TERM
   if ! acquire_slot "$max_parallel"; then
-    python "$HELPER" refuse parallel_limit "$slug" \
+    "$PY" "$HELPER" refuse parallel_limit "$slug" \
       "concurrent executor limit reached ($max_parallel)"
     return 6
   fi
@@ -272,11 +279,11 @@ This task depends on: $c_deps (treat them as already done)"
   git -C "$repo" worktree add -b "$branch" "$wt" "$base_sha" >"$d/worktree.log" 2>&1 \
     || { cat "$d/worktree.log" >&2; die "could not create the worktree"; }
 
-  python "$HELPER" init "$d" "$task_id" "$branch" "$wt" "$repo" "$base_sha" "$model" \
+  "$PY" "$HELPER" init "$d" "$task_id" "$branch" "$wt" "$repo" "$base_sha" "$model" \
     "$attempt" "$max_attempts" "$test_cmd" "$require_tests" "$scope" "$warnings"
 
   # Fingerprint critical files before the run (tamper detector).
-  python "$HELPER" guard-snapshot "$d/guard-before.json" "$repo" "$SCRIPTS"
+  "$PY" "$HELPER" guard-snapshot "$d/guard-before.json" "$repo" "$SCRIPTS"
 
   local t0 t1 codex_exit=0
   t0=$(date +%s)
@@ -289,30 +296,39 @@ This task depends on: $c_deps (treat them as already done)"
   t1=$(date +%s)
   echo "$(( spent + t1 - t0 ))" > "$ROOT/budget/$slug"
 
-  python "$HELPER" guard-check "$d/guard-before.json" "$repo" "$SCRIPTS" "$d" \
+  "$PY" "$HELPER" guard-check "$d/guard-before.json" "$repo" "$SCRIPTS" "$d" \
     > "$d/guard-changed.txt" 2>/dev/null || true
 
-  # Facts about the repository, not the executor's claims.
+  # Facts about the repository, not the executor's claims. The executor may have
+  # committed on its own, so changes are measured against the base commit and
+  # include both committed and staged work.
   git -C "$wt" add -A >/dev/null 2>&1 || true
-  git -C "$wt" diff --cached --name-only > "$d/changed_files.txt" 2>/dev/null \
-    || : > "$d/changed_files.txt"
+  {
+    git -C "$wt" diff --name-only "$base_sha" HEAD 2>/dev/null || true
+    git -C "$wt" diff --cached --name-only 2>/dev/null || true
+  } | sort -u | sed '/^$/d' > "$d/changed_files.txt"
+
   local commit_sha=""
-  if [ "$commit" -eq 1 ] && [ -s "$d/changed_files.txt" ]; then
-    if git -C "$wt" -c user.name="codex-task" -c user.email="codex-task@local" \
-         commit -q -m "codex: $slug ($task_id)" >>"$d/worktree.log" 2>&1; then
-      commit_sha="$(git -C "$wt" rev-parse HEAD)"
-    fi
+  if [ "$commit" -eq 1 ] && [ -n "$(git -C "$wt" diff --cached --name-only 2>/dev/null)" ]; then
+    git -C "$wt" -c user.name="codex-task" -c user.email="codex-task@local" \
+      commit -q -m "codex: $slug ($task_id)" >>"$d/worktree.log" 2>&1 || true
   fi
+  local head_sha
+  head_sha="$(git -C "$wt" rev-parse HEAD)"
+  [ "$head_sha" != "$base_sha" ] && commit_sha="$head_sha"
+
   if [ -n "$commit_sha" ]; then
     git -C "$wt" diff "$base_sha".."$commit_sha" > "$d/diff.patch" 2>/dev/null \
       || : > "$d/diff.patch"
+    # anything still uncommitted (e.g. --no-commit) is appended for review
+    git -C "$wt" diff --cached >> "$d/diff.patch" 2>/dev/null || true
   else
     git -C "$wt" diff --cached > "$d/diff.patch" 2>/dev/null || : > "$d/diff.patch"
   fi
 
   # No progress between attempts?
   local no_progress=0 dhash prev=""
-  dhash="$(python "$HELPER" sha1-file "$d/diff.patch")"
+  dhash="$("$PY" "$HELPER" sha1-file "$d/diff.patch")"
   [ -f "$ROOT/progress/$slug" ] && prev="$(cat "$ROOT/progress/$slug")"
   if [ "$attempt" -gt 1 ] && [ "$dhash" = "$prev" ]; then no_progress=1; fi
   echo "$dhash" > "$ROOT/progress/$slug"
@@ -331,14 +347,14 @@ This task depends on: $c_deps (treat them as already done)"
     : > "$d/tests.log"
   fi
 
-  python "$HELPER" finish "$d" "$codex_exit" "$test_exit" "$commit_sha" "$((t1-t0))" "$no_progress"
+  "$PY" "$HELPER" finish "$d" "$codex_exit" "$test_exit" "$commit_sha" "$((t1-t0))" "$no_progress"
 
   set +e
-  python "$REPORTER" "$d"
+  "$PY" "$REPORTER" "$d"
   local rc=$?
   set -e
 
-  python "$HELPER" index "$d" "$ROOT"
+  "$PY" "$HELPER" index "$d" "$ROOT"
 
   if [ "$rc" -eq 0 ]; then
     rm -f "$acount_file" "$ROOT/budget/$slug" "$ROOT/progress/$slug"
@@ -403,7 +419,7 @@ $(head -c 60000 "$d/diff.patch")"
       --skip-git-repo-check "$prompt" > "$d/review.jsonl" 2> "$d/review-stderr.log"
   local rc=$?
   set -e
-  python "$HELPER" review-parse "$d/review.txt" > "$d/review.json"
+  "$PY" "$HELPER" review-parse "$d/review.txt" > "$d/review.json"
   cat "$d/review.json"
   return $rc
 }
@@ -437,6 +453,14 @@ cmd_merge() {
 
   [ -n "$commit" ] && [ "$commit" != "None" ] || die "the task has no commit — nothing to merge"
   [ -n "$into" ] || into="$(git -C "$repo" rev-parse --abbrev-ref HEAD)"
+
+  # Merge exactly the commit that was reported, reviewed and risk-checked.
+  # Anything added to the branch afterwards has not been through the gate.
+  local branch_tip
+  branch_tip="$(git -C "$repo" rev-parse "$branch" 2>/dev/null || echo "")"
+  if [ "$branch_tip" != "$commit" ]; then
+    die "branch $branch moved past the verified commit ($commit != $branch_tip) — re-run the task"
+  fi
 
   # 1. Conflicts are checked FIRST and are never bypassable with --ack.
   local mb
@@ -502,7 +526,7 @@ cmd_merge() {
       echo "WARNING: tests failed on the candidate merge result (exit $after_exit)." >&2
       echo "Target branch $into was NOT changed (HEAD $before). Task branch and worktree kept." >&2
       echo "Log: $d/tests-after-merge.log" >&2
-      python "$HELPER" merge-log "$d" "$ROOT" "$into" "rejected_tests_failed"
+      "$PY" "$HELPER" merge-log "$d" "$ROOT" "$into" "rejected_tests_failed"
       return 1
     fi
     echo "post-merge tests: passed"
@@ -510,6 +534,19 @@ cmd_merge() {
 
   # 5. Update exactly the ref given by --into, and only if it has not moved
   # since the candidate was built (compare-and-swap).
+  # The checked-out branch may have changed while the tests ran; a fast-forward
+  # would then land on the wrong branch.
+  local now_branch
+  now_branch="$(git -C "$repo" symbolic-ref --short -q HEAD || echo "")"
+  if [ "$now_branch" != "$cur_branch" ]; then
+    git -C "$repo" worktree remove --force "$stage" 2>/dev/null || true
+    git -C "$repo" worktree prune
+    echo "WARNING: the checked-out branch changed during the check ($cur_branch -> ${now_branch:-detached})." >&2
+    echo "No branch was changed. Task branch and worktree kept." >&2
+    "$PY" "$HELPER" merge-log "$d" "$ROOT" "$into" "rejected_head_moved" "$before" "$before"
+    return 1
+  fi
+
   local now_sha
   now_sha="$(git -C "$repo" rev-parse "$into")"
   if [ "$now_sha" != "$before" ]; then
@@ -518,7 +555,7 @@ cmd_merge() {
     echo "WARNING: $into moved during the check ($before -> $now_sha)." >&2
     echo "No branch was changed. Task branch and worktree kept." >&2
     echo "Run the merge again to verify against the new state of $into." >&2
-    python "$HELPER" merge-log "$d" "$ROOT" "$into" "rejected_target_moved" "$before" "$now_sha"
+    "$PY" "$HELPER" merge-log "$d" "$ROOT" "$into" "rejected_target_moved" "$before" "$now_sha"
     return 1
   fi
 
@@ -544,7 +581,7 @@ cmd_merge() {
   if [ "$into" != "$cur_branch" ]; then
     echo "working copy on ${cur_branch:-(detached HEAD)} was not touched"
   fi
-  python "$HELPER" merge-log "$d" "$ROOT" "$into" "merged" "$before" "$merged_sha"
+  "$PY" "$HELPER" merge-log "$d" "$ROOT" "$into" "merged" "$before" "$merged_sha"
 }
 
 cmd_clean() {
@@ -560,13 +597,19 @@ cmd_clean() {
   if [ -d "$wt" ] && [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && [ "$force" -ne 1 ]; then
     die "the worktree has uncommitted changes — removal refused (use --force)"
   fi
+  local rm_ok=0
   if [ "$force" -eq 1 ]; then
-    git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
+    git -C "$repo" worktree remove --force "$wt" >>"$d/worktree.log" 2>&1 && rm_ok=1
   else
-    git -C "$repo" worktree remove "$wt" 2>/dev/null || true
+    git -C "$repo" worktree remove "$wt" >>"$d/worktree.log" 2>&1 && rm_ok=1
   fi
   git -C "$repo" worktree prune
-  echo "worktree removed, task log kept: $d"
+  if [ "$rm_ok" -eq 1 ] || [ ! -d "$wt" ]; then
+    echo "worktree removed, task log kept: $d"
+  else
+    echo "could not remove the worktree (see $d/worktree.log); task log kept: $d" >&2
+    return 1
+  fi
 }
 
 cmd_gc() {
@@ -579,14 +622,14 @@ cmd_gc() {
       *) die "unknown option $1" ;;
     esac
   done
-  python "$HELPER" gc "$ROOT" "$days" "$max_mb" "$dry"
+  "$PY" "$HELPER" gc "$ROOT" "$days" "$max_mb" "$dry"
 }
 
-cmd_stats() { python "$HELPER" stats "$ROOT"; }
+cmd_stats() { "$PY" "$HELPER" stats "$ROOT"; }
 
 cmd_recover() {
   # Unfinished tasks and orphaned resources. Never deletes anything by itself.
-  python "$HELPER" orphans "$ROOT"
+  "$PY" "$HELPER" orphans "$ROOT"
   echo "--- worktrees with uncommitted changes:"
   local found=0
   for d in "$ROOT"/2*; do
