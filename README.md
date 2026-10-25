@@ -1,5 +1,7 @@
 # Claude love Codex
 
+[![tests](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml/badge.svg)](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml)
+
 Claude Code orchestrates. OpenAI Codex CLI executes. You write one task in plain
 words, and Claude decides what to do itself, what to delegate, checks the real
 diff and tests, and hands back a single report.

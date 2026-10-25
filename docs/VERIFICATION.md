@@ -14,7 +14,9 @@ deterministic.
 | `tests/run-lifecycle.sh` | SIGINT, timeout, orphaned lock, orphaned worktree, corrupt report, restart, log rotation, stats | 25 / 25 |
 | `tests/run-merge-atomic.sh` | failing post-merge tests, ref targeting, compare-and-swap, branch moved past the gate, HEAD switched mid-check, control cases | 47 / 47 |
 
-Run them with the environment the user has, not a special one:
+CI runs all three on ubuntu-latest, macos-latest and windows-latest for every
+push and pull request. Run them locally with the environment you actually have,
+not a special one:
 
 ```bash
 env -u PYTHONDONTWRITEBYTECODE bash tests/run-tests.sh
@@ -78,9 +80,9 @@ duplicate detection are not atomic under exactly simultaneous starts.
 
 ## Not verified
 
-- macOS and Linux beyond CI: the suites run in GitHub Actions on ubuntu,
-  macos and windows, but the live Codex path was exercised only on
-  Windows 11 + Git Bash.
+- The live Codex path on macOS and Linux. All three suites pass in GitHub
+  Actions on ubuntu-latest, macos-latest and windows-latest, but delegation
+  against a real Codex binary was exercised only on Windows 11 + Git Bash.
 - Parallel execution with more than two live executors.
 - The `model_unavailable` status (implemented from the observed error text, not
   reproduced on purpose).

@@ -1,5 +1,7 @@
 # Claude love Codex
 
+[![tests](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml/badge.svg)](https://github.com/fafnirov/claude-love-codex/actions/workflows/tests.yml)
+
 Claude Code — оркестратор. OpenAI Codex CLI — исполнитель. Вы формулируете задачу
 словами, а Claude сам решает, что сделать самому, что делегировать, проверяет
 фактический дифф и тесты и возвращает один отчёт.
