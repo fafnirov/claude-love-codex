@@ -24,6 +24,20 @@ env -u PYTHONDONTWRITEBYTECODE bash tests/run-lifecycle.sh
 env -u PYTHONDONTWRITEBYTECODE bash tests/run-merge-atomic.sh
 ```
 
+## Installer
+
+`install.sh` was verified from a fresh `git clone` into an isolated
+`CLAUDE_DIR`/`CODEX_HOME`, not from the development tree: executable bits and LF
+line endings survive the clone, the scripts, the skill and the test suites land
+in the right places, the suites pass from the installed location with and
+without `CLC_SCRIPTS`, and `settings.json` is never created. An existing
+`~/.codex/AGENTS.md` is left untouched and reported instead of overwritten.
+
+Two defects were found and fixed in that run: `doctor` printed a Codex warning
+instead of the version, and a fresh install pinned a hard-coded model. Nothing
+is pinned now — without an explicit `--model` or `CODEX_MODEL`, Codex uses its
+own configuration.
+
 ## Verified against a live Codex
 
 - **End-to-end project.** A small REST API (stdlib only) built from a plan:

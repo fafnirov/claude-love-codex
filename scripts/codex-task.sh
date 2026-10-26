@@ -35,7 +35,8 @@ RUNNER="$SCRIPTS/codex-run.sh"
 REPORTER="$SCRIPTS/codex_report.py"
 HELPER="$SCRIPTS/codex_meta.py"
 CODEX_CONFIG="${CODEX_HOME:-$HOME/.codex}/config.toml"
-DEFAULT_MODEL="${CODEX_DEFAULT_MODEL:-gpt-5.1-codex}"
+# empty on purpose: without an explicit choice Codex uses its own config
+DEFAULT_MODEL="${CODEX_DEFAULT_MODEL:-}"
 
 SLOT=""
 ACTIVE_FILE=""
@@ -80,7 +81,7 @@ resolve_model() {
     want="$("$PY" "$HELPER" config-model "$CODEX_CONFIG")"
   fi
   [ -n "$want" ] || want="$DEFAULT_MODEL"
-  echo "$want"
+  echo "$want"   # may be empty: then Codex picks the model itself
 }
 
 # Availability per the Codex model cache; the cache can be stale, so this is a
@@ -120,7 +121,9 @@ cmd_doctor() {
   fi
   if [ -n "$bin" ]; then
     echo "binary:   $bin"
-    echo "version:  $("$bin" --version 2>&1 | head -1)"
+    local ver
+    ver="$("$bin" --version 2>/dev/null | head -1)"
+    echo "version:  ${ver:-unknown (the binary did not report a version)}"
   else
     echo "binary:   NOT FOUND (set CODEX_BIN)"
   fi
@@ -131,7 +134,11 @@ cmd_doctor() {
   fi
   local m
   m="$(resolve_model "")"
-  echo "model:    $m (in model cache: $(model_known "$m"))"
+  if [ -n "$m" ]; then
+    echo "model:    $m (in model cache: $(model_known "$m"))"
+  else
+    echo "model:    not pinned — Codex uses its own configuration"
+  fi
   echo "config:   $CODEX_CONFIG"
   echo "logs:     $ROOT"
   echo "slots:    $(ls -1d "$ROOT"/locks/slot-* 2>/dev/null | wc -l) busy"
@@ -211,7 +218,7 @@ This task depends on: $c_deps (treat them as already done)"
   local model
   model="$(resolve_model "$model_opt")"
   local warnings=""
-  if [ "$(model_known "$model")" = "no" ]; then
+  if [ -n "$model" ] && [ "$(model_known "$model")" = "no" ]; then
     warnings="model $model is not in the Codex model cache"
   fi
 
