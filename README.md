@@ -127,6 +127,14 @@ bash tests/run-merge-atomic.sh   # merge atomicity and ref updates
 See [docs/VERIFICATION.md](docs/VERIFICATION.md) for what was verified live
 against a real Codex.
 
+## Why the name
+
+The orchestrator plans and decides; the executor writes the code and burns its
+own context. Neither replaces the other, and the result is better than either
+alone.
+
+<img src="docs/images/hug.webp" alt="The two robot mascots hugging, with a heart above them" width="100%">
+
 ## Russian documentation
 
 [README.ru.md](README.ru.md)
